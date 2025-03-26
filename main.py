@@ -1,37 +1,28 @@
-import json
-import time
-from selenium import webdriver
-from selenium.webdriver import ChromeOptions
-from selenium.webdriver.common.by import By
-
-caps = ChromeOptions()
-caps.page_load_strategy = "eager"
-driver = webdriver.Chrome(options=caps)
-
-pages, i = [], 1
-while len(pages) < 100:
-    driver.get(f'https://habr.com/ru/search/page{i}/?q=андроид&target_type=posts&order=relevance')
-    time.sleep(2)
-    i += 1
-
-    urls = [e.find_element(By.CLASS_NAME, 'tm-title__link').get_attribute('href') for e in driver.find_elements(By.TAG_NAME, 'article')]
-    for page_url in urls[:3]:
-        try:
-            driver.get(page_url)
-            time.sleep(1)
-
-            content = driver.find_element(By.CLASS_NAME, 'tm-article-body').text
-            if len(content) > 3000:
-                pages.append({'url': page_url, 'content': content})
-                print(len(pages))
-        except:
-            pass
+import nltk
+from nltk.corpus import stopwords
+import pymorphy2
 
 
-index_text = '\n'.join([f'page_{i}.txt - {page["url"]}' for i, page in enumerate(pages)])
-with open('index.txt', 'w', encoding='utf-8') as f:
-    f.write(index_text)
+nltk.download('punkt_tab')
+nltk.download('stopwords')
 
-for i, page in enumerate(pages):
-    with open(f'static/page_{i}.txt', 'w', encoding='utf-8') as f:
-        f.write(page['content'])
+morph = pymorphy2.MorphAnalyzer()
+stop_words = set(stopwords.words()).union({'-'})
+available_simbols = {chr(i) for c0, c1 in [('a', 'z'), ('а', 'я'), ('-', '-')] for i in range(ord(c0), ord(c1) + 1)}
+
+for i in range(100):
+    with open(f'static/pages/page_{i}.txt', 'r', encoding='utf-8') as f:
+        text = f.read().lower()
+
+    words = nltk.word_tokenize(text)
+    tokens = {word for word in words if not word in stop_words and not [c for c in word if c not in available_simbols]}
+    lemmatized_words = {morph.parse(word)[0].normal_form for word in tokens}
+    lemma_to_tokens = {l: [] for l in lemmatized_words}
+    for word in tokens:
+        lemma_to_tokens[morph.parse(word)[0].normal_form].append(word)
+
+    with open(f'static/tokens/tokens_{i}.txt', 'w', encoding='utf-8') as f:
+        f.write('\n'.join(tokens))
+
+    with open(f'static/lemmas/lemmas_{i}.txt', 'w', encoding='utf-8') as f:
+        f.write('\n'.join([f'{k}: {", ".join(v)}' for k, v in lemma_to_tokens.items()]))
