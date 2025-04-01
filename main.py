@@ -1,28 +1,56 @@
-import nltk
-from nltk.corpus import stopwords
-import pymorphy2
+"""
+Суть алгоритма в том, чтобы преобразовать запрос в выражение над множествами,
+где слова - это множество номеров релевантных страниц, а AND и OR это соответственно
+пересечение и объединение множеств. Оператор NOT преобразуется в разность между
+множеством всех страниц и исходным множеством.
+
+Преобразованный запрос вычисляется с помощью встроенной функцией eval.
+"""
+
+import json
+
+QUERY = 'image AND (NOT компьютер AND экран) OR (бит AND NOT(техника OR рюкзак))'
 
 
-nltk.download('punkt_tab')
-nltk.download('stopwords')
+def operator_not(s):
+    def find_end_staples(s0, i0):
+        k, i0 = 1, i0 + 1
+        while k and i0 < len(s0):
+            k = (k + 1) if s0[i0] == '(' else (k - 1) if s0[i0] == ')' else k
+            i0 += 1
+        return i0
 
-morph = pymorphy2.MorphAnalyzer()
-stop_words = set(stopwords.words()).union({'-'})
-available_simbols = {chr(i) for c0, c1 in [('a', 'z'), ('а', 'я'), ('-', '-')] for i in range(ord(c0), ord(c1) + 1)}
+    def find_end(s0, i0):
+        while s0[i0] not in [')', ' ', '&', '|', '_'] and i0 < len(s0):
+            i0 += 1
+        return i0
 
-for i in range(100):
-    with open(f'static/pages/page_{i}.txt', 'r', encoding='utf-8') as f:
-        text = f.read().lower()
+    for i in range(len(s)):
+        if s[i] == '_':
+            if s[i + 2] == '(':
+                end = find_end_staples(s, i + 2)
+                s = s[:end] + ')' + s[end:]
+                s = s.replace('_ (', f'(ALL - (', 1)
+            else:
+                end = find_end(s, i + 2)
+                s = s[:end] + ')' + s[end:]
+                s = s.replace('_', f'(ALL -', 1)
 
-    words = nltk.word_tokenize(text)
-    tokens = {word for word in words if not word in stop_words and not [c for c in word if c not in available_simbols]}
-    lemmatized_words = {morph.parse(word)[0].normal_form for word in tokens}
-    lemma_to_tokens = {l: [] for l in lemmatized_words}
-    for word in tokens:
-        lemma_to_tokens[morph.parse(word)[0].normal_form].append(word)
+    return s
 
-    with open(f'static/tokens/tokens_{i}.txt', 'w', encoding='utf-8') as f:
-        f.write('\n'.join(tokens))
 
-    with open(f'static/lemmas/lemmas_{i}.txt', 'w', encoding='utf-8') as f:
-        f.write('\n'.join([f'{k}: {", ".join(v)}' for k, v in lemma_to_tokens.items()]))
+raw_request_1 = QUERY.strip().replace('  ', ' ')
+raw_request_2 = raw_request_1.replace('AND', ' & ').replace('OR', ' | ').replace('NOT', ' _ ')
+request = raw_request_2.replace('  ', ' ').lower()
+
+with open('static/index.json', 'r') as f:
+    index = json.loads(f.read())
+    index['ALL'] = [i for i in range(100)]
+
+request = operator_not(request)
+request_words = [w for w in request.replace('(', '').replace(')', '').split() if w and w not in ['&', '|', '-']]
+for word in request_words:
+    request = request.replace(word, str(set(index.get(word, []))))
+
+result = list(eval(request))
+print('Найденные страницы:', result)
